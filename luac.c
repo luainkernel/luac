@@ -35,6 +35,9 @@ static void PrintFunction(const Proto* f, int full);
 static int listing=0;			/* list bytecodes? */
 static int dumping=1;			/* dump bytecodes? */
 static int stripping=0;			/* strip debug information? */
+#ifdef _KERNEL
+static int swapping=0;			/* dump for the other byte order? */
+#endif /* _KERNEL */
 static char Output[]={ OUTPUT };	/* default output file name */
 static const char* output=Output;	/* actual output file name */
 static const char* progname=PROGNAME;	/* actual program name */
@@ -62,6 +65,9 @@ static void usage(const char* message)
   "usage: %s [options] [filenames]\n"
   "Available options are:\n"
   "  -l       list (use -l -l for full listing)\n"
+#ifdef _KERNEL
+  "  -e name  byte order of the target, 'big' or 'little' (default is the host's)\n"
+#endif /* _KERNEL */
   "  -o name  output to file 'name' (default is \"%s\")\n"
   "  -p       parse only\n"
   "  -s       strip debug information\n"
@@ -91,6 +97,16 @@ static int doargs(int argc, char* argv[])
   }
   else if (IS("-"))			/* end of options; use stdin */
    break;
+#ifdef _KERNEL
+  else if (IS("-e"))			/* byte order of the target */
+  {
+   const int one=1;
+   const char* order=argv[++i];
+   if (order==NULL || (strcmp(order,"big")!=0 && strcmp(order,"little")!=0))
+    usage("'-e' needs 'big' or 'little'");
+   swapping=(*order=='b')!=(*(const char*)&one==0);	/* the target's order is not the host's */
+  }
+#endif /* _KERNEL */
   else if (IS("-l"))			/* list */
    ++listing;
   else if (IS("-o"))			/* output file */
@@ -163,6 +179,15 @@ static const Proto* combine(lua_State* L, int n)
 static int writer(lua_State* L, const void* p, size_t size, void* u)
 {
  UNUSED(L);
+#ifdef _KERNEL
+ if (swapping && size>1)			/* one raw value of the chunk, reversed for the target */
+ {
+  unsigned char buff[sizeof(lua_Integer)];
+  size_t i;
+  for (i=0; i<size; i++) buff[i]=((const unsigned char*)p)[size-1-i];
+  return fwrite(buff,size,1,(FILE*)u)!=1;
+ }
+#endif /* _KERNEL */
  return (fwrite(p,size,1,(FILE*)u)!=1) && (size!=0);
 }
 
